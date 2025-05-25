@@ -1,0 +1,6 @@
+train: /root/ultralytics-8.3.75/datasets/images/train #train images(relative to 'path')128 images
+val: /root/ultralytics-8.3.75/datasets/images/val # val images (relative to 'path')128 images
+test: /root/ultralytics-8.3.75/datasets/images/test
+nc: 4
+#Classes
+names: ['open_eye','close_eye','open_mouth','close_mouth']

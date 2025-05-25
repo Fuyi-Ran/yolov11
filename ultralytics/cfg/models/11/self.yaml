@@ -1,0 +1,65 @@
+# Ultralytics YOLO 🚀, AGPL-3.0 license
+# Combined YOLO11 model with features from both yolo11-MutilBackbone-MSGA and yolo11-bifpn
+# For details see https://docs.ultralytics.com/models/rtdetr and https://docs.ultralytics.com/tasks/detect
+
+# Parameters
+nc: 80  # number of classes
+scales: # model compound scaling constants, i.e. 'model=yolov8n-cls.yaml' will call yolov8-cls.yaml with scale 'n'
+  # [depth, width, max_channels]
+  n: [0.50, 0.25, 1024] # summary: 319 layers, 2624080 parameters, 2624064 gradients, 6.6 GFLOPs
+  s: [0.50, 0.50, 1024] # summary: 319 layers, 9458752 parameters, 9458736 gradients, 21.7 GFLOPs
+  m: [0.67, 1.00, 512] # summary: 409 layers, 20114688 parameters, 20114672 gradients, 68.5 GFLOPs
+  l: [1.00, 1.00, 512] # summary: 631 layers, 25372160 parameters, 25372144 gradients, 87.6 GFLOPs
+  x: [1.00, 1.50, 512] # summary: 631 layers, 56966176 parameters, 56966160 gradients, 196.0 GFLOPs
+fusion_mode: bifpn
+node_mode: C3k2
+head_channel: 256
+
+# Backbone
+backbone:
+  - [-1, 1, HGStem, [16, 32]]  # 0-P2/4
+  - [0, 2, C3k2, [32, False, 0.25]] # 1-P2/4
+  - [-1, 1, Conv, [64, 3, 2]] # 2-P3/8
+  - [-1, 2, C3k2, [64, False, 0.25]] # 3-P3/8
+  - [0, 3, HGBlock, [16, 32, 3]] # 4-P2/4
+  - [-1, 1, DWConv, [64, 3, 2, 1, False]]  # 5-P3/8
+  - [-1, 3, HGBlock, [32, 64, 3]]   # 6-P3/8
+  - [[3, 6], 1, MultiScaleGatedAttn, []] # 7-P3/8
+  - [7, 1, Conv, [128, 3, 2]]  # 8-P4/16
+  - [-1, 2, C3k2, [128, True]] # 9-P4/16
+  - [7, 1, DWConv, [128, 3, 2, 1, False]]  # 10-P4/16
+  - [-1, 3, HGBlock, [64, 128, 5, True, False]]  # cm, c2, k, light, shortcut
+  - [-1, 3, HGBlock, [64, 128, 5, True, True]]
+  - [-1, 3, HGBlock, [64, 128, 5, True, True]]  # 13-P4/16
+  - [[9, 13], 1, MultiScaleGatedAttn, []] # 14-P4/16
+  - [14, 1, Conv, [256, 3, 2]]  # 15-P5/32
+  - [-1, 2, C3k2, [256, True]] # 16-P5/32
+  - [14, 1, DWConv, [256, 3, 2, 1, False]]  # 17-P5/32
+  - [-1, 3, HGBlock, [128, 256, 5, True, False]]  # 18-P5/32
+  - [[16, 18], 1, MultiScaleGatedAttn, []] # 19-P5/32
+  - [-1, 1, SPPF, [1024, 5]] # 20-P5/32
+  - [-1, 1, C2PSA, [1024]] # 21-P5/32
+
+# Head
+head:
+  - [7, 1, Conv, [head_channel]]  # 22-P3/8
+  - [14, 1, Conv, [head_channel]]  # 23-P4/16
+  - [21, 1, Conv, [head_channel]]  # 24-P5/32
+  
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']] # 25 P5->P4
+  - [[-1, 23], 1, Fusion, [fusion_mode]] # 26
+  - [-1, 3, node_mode, [head_channel, False]] # 27-P4/16
+  
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']] # 28 P4->P3
+  - [[-1, 22], 1, Fusion, [fusion_mode]] # 29
+  - [-1, 3, node_mode, [head_channel, False]] # 30-P3/8
+  
+  - [22, 1, Conv, [head_channel, 3, 2]] # 31 P3->P4
+  - [[-1, 23, 27], 1, Fusion, [fusion_mode]] # 32
+  - [-1, 3, node_mode, [head_channel, False]] # 33-P4/16
+  
+  - [-1, 1, Conv, [head_channel, 3, 2]] # 34 P4->P5
+  - [[-1, 24], 1, Fusion, [fusion_mode]] # 35
+  - [-1, 3, node_mode, [head_channel, False]] # 36-P5/32
+  
+  - [[30, 33, 36], 1, Detect, [nc]]  # Detect(P3, P4, P5)
